@@ -39,7 +39,7 @@ if (!in_array($page, $validPages, true)) {
 try {
     switch ($page) {
         case 'garden':
-            $message = isset($_GET['msg']) ? htmlspecialchars($_GET['msg']) : null;
+            $message = $_GET['msg'] ?? null;
             $messageType = 'success';
 
             if ($action === 'harvest') {
@@ -104,7 +104,7 @@ try {
 } catch(Throwable $e) {
     // Page d'erreur gracieuse
     echo Renderer::header('Erreur', '');
-    echo Renderer::flash('❌ Erreur: ' . htmlspecialchars($e->getMessage()), 'error');
+    echo Renderer::flash('❌ Erreur: ' . $e->getMessage(), 'error');
     echo '<p><a href="?page=garden" class="btn btn-primary">Retour au jardin</a></p>';
     echo Renderer::footer();
 }

@@ -421,13 +421,21 @@ HTML;
         $html .= '<div class="card">';
         $html .= '<h3 style="margin-bottom:12px;">📦 Acheter un pack de graines</h3>';
         $html .= "<p style=\"color:#888;margin-bottom:16px;\">Chaque pack contient {$config['pack']['seeds_per_pack']} graines. Plus vous investissez, plus les chances de rareté augmentent !</p>";
-        $html .= '<form method="POST" action="?page=shop&action=buy">';
-        $html .= '<div class="form-group">';
-        $html .= "<label>💰 Montant à investir (min {$config['pack']['min_price']}, max {$player['gold']} disponibles)</label>";
-        $html .= "<input type=\"number\" name=\"price\" class=\"form-input\" min=\"{$config['pack']['min_price']}\" max=\"{$player['gold']}\" value=\"{$config['pack']['min_price']}\" required>";
-        $html .= '</div>';
-        $html .= '<button type="submit" class="btn btn-gold">🎰 Acheter le pack</button>';
-        $html .= '</form>';
+
+        $minPrice = $config['pack']['min_price'];
+        $canBuy = $player['gold'] >= $minPrice;
+
+        if ($canBuy) {
+            $html .= '<form method="POST" action="?page=shop&action=buy">';
+            $html .= '<div class="form-group">';
+            $html .= "<label>💰 Montant à investir (min {$minPrice}, max {$player['gold']} disponibles)</label>";
+            $html .= "<input type=\"number\" name=\"price\" class=\"form-input\" min=\"{$minPrice}\" max=\"{$player['gold']}\" value=\"{$minPrice}\" required>";
+            $html .= '</div>';
+            $html .= '<button type="submit" class="btn btn-gold">🎰 Acheter le pack</button>';
+            $html .= '</form>';
+        } else {
+            $html .= "<p style=\"color:#e74c3c;\">❌ Fonds insuffisants ! Il faut au moins {$minPrice} pièces. Vendez des pétales pour continuer.</p>";
+        }
 
         // Aperçu des probabilités
         $html .= '<div style="margin-top:20px;">';

@@ -35,7 +35,7 @@ class RNG
      */
     public function nextFloat(): float
     {
-        return $this->next() / 0x7FFFFFFF;
+        return $this->next() / 0x80000000;
     }
 
     /**

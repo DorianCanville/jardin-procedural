@@ -34,14 +34,16 @@ class Game
         $inventory = Storage::read('inventory.json');
 
         // Vérifier le nombre de slots
-        if (count($plants['garden']) >= $config['garden_max_slots']) {
+        $garden = $plants['garden'] ?? [];
+        if (count($garden) >= $config['garden_max_slots']) {
             throw new RuntimeException("Jardin plein ! ({$config['garden_max_slots']} emplacements max)");
         }
 
         // Trouver la graine dans l'inventaire
         $seedIndex = null;
         $seedData = null;
-        foreach ($inventory['seeds'] as $index => $s) {
+        $seeds = $inventory['seeds'] ?? [];
+        foreach ($seeds as $index => $s) {
             if ($s['id'] === $seedId) {
                 $seedIndex = $index;
                 $seedData = $s;
@@ -62,6 +64,7 @@ class Game
         Storage::write('inventory.json', $inventory);
 
         // Ajouter au jardin
+        $plants['garden'] = $garden;
         $plants['garden'][] = $plant->toArray();
         Storage::write('plants.json', $plants);
 
@@ -79,7 +82,8 @@ class Game
 
         $plantIndex = null;
         $plantData = null;
-        foreach ($plants['garden'] as $index => $p) {
+        $garden = $plants['garden'] ?? [];
+        foreach ($garden as $index => $p) {
             if ($p['id'] === $plantId) {
                 $plantIndex = $index;
                 $plantData = $p;
@@ -117,7 +121,8 @@ class Game
         Storage::write('player.json', $player);
 
         // Retirer la plante du jardin
-        array_splice($plants['garden'], $plantIndex, 1);
+        array_splice($garden, $plantIndex, 1);
+        $plants['garden'] = $garden;
         Storage::write('plants.json', $plants);
 
         return [
@@ -135,7 +140,7 @@ class Game
         $plants = Storage::read('plants.json');
         $result = [];
 
-        foreach ($plants['garden'] as $plantData) {
+        foreach ($plants['garden'] ?? [] as $plantData) {
             $plant = Plant::fromArray($plantData);
             $result[] = [
                 'plant' => $plant,
@@ -155,7 +160,7 @@ class Game
     {
         $inventory = Storage::read('inventory.json');
         $seeds = [];
-        foreach ($inventory['seeds'] as $seedData) {
+        foreach ($inventory['seeds'] ?? [] as $seedData) {
             $seeds[] = Seed::fromArray($seedData);
         }
         return $seeds;
