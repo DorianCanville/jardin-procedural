@@ -1,35 +1,48 @@
 <?php
 /**
  * Action : Acheter un pack de graines.
+ * Méthode : POST
+ * Paramètres : price (int)
  */
-require_once __DIR__ . '/../classes/Shop.php';
 
-function handleBuyPack(): array
-{
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        return ['message' => 'Méthode non autorisée.', 'type' => 'error'];
-    }
-
-    $price = filter_input(INPUT_POST, 'price', FILTER_VALIDATE_INT);
-
-    if ($price === false || $price === null || $price <= 0) {
-        return ['message' => 'Prix invalide.', 'type' => 'error'];
-    }
-
-    // Limite anti-abus
-    if ($price > 1000000) {
-        return ['message' => 'Montant trop élevé.', 'type' => 'error'];
-    }
-
-    try {
-        $result = Shop::buyPack($price);
-        return [
-            'message' => "📦 Pack acheté pour {$price} pièces !",
-            'type' => 'success',
-            'seeds' => $result['seeds'],
-            'probabilities' => $result['probabilities'],
-        ];
-    } catch (Exception $e) {
-        return ['message' => $e->getMessage(), 'type' => 'error'];
-    }
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    header('Location: ?page=shop');
+    exit;
 }
+
+$price = filter_input(INPUT_POST, 'price', FILTER_VALIDATE_INT);
+
+// Validation
+if ($price === false || $price === null || $price < 1) {
+    $_SESSION['flash'] = ['type' => 'error', 'message' => 'Montant invalide.'];
+    header('Location: ?page=shop');
+    exit;
+}
+
+// Protection anti-triche : limite maximale raisonnable
+if ($price > 100000) {
+    $_SESSION['flash'] = ['type' => 'error', 'message' => 'Montant trop eleve.'];
+    header('Location: ?page=shop');
+    exit;
+}
+
+try {
+    $shop = new Shop($game->getStorage(), $game->getConfig());
+    $result = $shop->buyPack($price);
+
+    // Stocker le résultat pour affichage
+    $_SESSION['last_purchase'] = [
+        'seeds' => array_map(fn(Seed $s) => $s->toArray(), $result['seeds']),
+        'price' => $price,
+    ];
+
+    $_SESSION['flash'] = [
+        'type' => 'success',
+        'message' => "Pack achete pour {$price} pieces ! 3 graines obtenues.",
+    ];
+} catch (Exception $e) {
+    $_SESSION['flash'] = ['type' => 'error', 'message' => $e->getMessage()];
+}
+
+header('Location: ?page=shop');
+exit;

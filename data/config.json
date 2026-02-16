@@ -1,67 +1,66 @@
 {
-    "rarities": {
+    "rarity": {
         "E": {
             "label": "Commune",
-            "base_probability": 40,
-            "growth_time_seconds": 120,
+            "color": "#8B8B8B",
+            "probability": 40,
+            "growth_base_seconds": 120,
             "petal_yield": 3,
-            "color": "#8BC34A"
+            "petal_value": 1
         },
         "D": {
             "label": "Peu commune",
-            "base_probability": 25,
-            "growth_time_seconds": 300,
+            "color": "#4CAF50",
+            "probability": 25,
+            "growth_base_seconds": 300,
             "petal_yield": 5,
-            "color": "#2196F3"
+            "petal_value": 2
         },
         "C": {
             "label": "Rare",
-            "base_probability": 15,
-            "growth_time_seconds": 900,
+            "color": "#2196F3",
+            "probability": 15,
+            "growth_base_seconds": 900,
             "petal_yield": 8,
-            "color": "#9C27B0"
+            "petal_value": 5
         },
         "B": {
             "label": "Très rare",
-            "base_probability": 10,
-            "growth_time_seconds": 2700,
+            "color": "#9C27B0",
+            "probability": 10,
+            "growth_base_seconds": 2700,
             "petal_yield": 12,
-            "color": "#FF9800"
+            "petal_value": 10
         },
         "A": {
             "label": "Épique",
-            "base_probability": 7,
-            "growth_time_seconds": 7200,
+            "color": "#FF9800",
+            "probability": 7,
+            "growth_base_seconds": 7200,
             "petal_yield": 18,
-            "color": "#F44336"
+            "petal_value": 25
         },
         "S": {
             "label": "Légendaire",
-            "base_probability": 3,
-            "growth_time_seconds": 21600,
+            "color": "#F44336",
+            "probability": 3,
+            "growth_base_seconds": 21600,
             "petal_yield": 30,
-            "color": "#FFD700"
+            "petal_value": 60
         }
     },
-    "pack": {
-        "seeds_per_pack": 3,
-        "min_price": 10
+    "shop": {
+        "pack_size": 3,
+        "min_price": 10,
+        "probability_boost_formula": "log"
     },
-    "petal_sell_prices": {
-        "E": 2,
-        "D": 5,
-        "C": 12,
-        "B": 25,
-        "A": 60,
-        "S": 150
+    "garden": {
+        "max_slots": 9
     },
-    "garden_max_slots": 9,
-    "growth_time_variation": [0.85, 1.25],
-    "petal_yield_variation": 0.20,
-    "starting_gold": 100,
-    "petal_shapes": ["rond", "pointu", "étoilé", "ondulé", "dentelé", "spirale", "cœur", "lance"],
-    "patterns": ["uni", "rayé", "tacheté", "dégradé", "marbré", "pailleté"],
-    "primary_colors": ["#FF6B6B", "#FF8E53", "#FFCD56", "#6BCB77", "#4D96FF", "#9B59B6", "#FF69B4", "#00CEC9", "#E17055", "#FDCB6E"],
-    "secondary_colors": ["#FFFFFF", "#F8E8EE", "#D5F5E3", "#D6EAF8", "#FCF3CF", "#FADBD8", "#E8DAEF", "#D5DBDB", "#FDEBD0", "#D4EFDF"],
-    "aura_colors": ["#FFD700", "#FF4500", "#00BFFF", "#FF00FF", "#7FFF00"]
+    "visual_attributes": {
+        "petal_shapes": ["rond", "pointu", "ovale", "étoile", "coeur", "spirale", "dentelé", "flamme"],
+        "colors": ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD", "#FF8C00", "#7B68EE", "#FF69B4", "#00CED1", "#FFD700", "#9370DB", "#FF4500", "#1E90FF", "#32CD32", "#FF1493"],
+        "patterns": ["uni", "dégradé", "tacheté", "rayé", "marbré", "veiné"],
+        "auras": ["aucune", "lueur douce", "particules", "halo", "flammes", "cristaux"]
+    }
 }

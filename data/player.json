@@ -1,21 +1,13 @@
 {
-    "name": "Jardinier",
+    "name": "Joueur",
     "gold": 100,
-    "petals": {
-        "E": 0,
-        "D": 0,
-        "C": 0,
-        "B": 0,
-        "A": 0,
-        "S": 0
-    },
-    "stats": {
-        "total_plants_grown": 0,
-        "total_petals_harvested": 0,
-        "total_gold_earned": 0,
-        "total_gold_spent": 0,
-        "total_packs_bought": 0,
-        "rarest_plant": "E"
-    },
-    "created_at": 0
+    "petals": 0,
+    "total_harvested": 0,
+    "total_planted": 0,
+    "total_sold": 0,
+    "total_packs_bought": 0,
+    "total_gold_spent": 0,
+    "total_gold_earned": 0,
+    "created_at": 0,
+    "best_rarity": "E"
 }

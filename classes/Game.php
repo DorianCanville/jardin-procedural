@@ -1,200 +1,233 @@
 <?php
-require_once __DIR__ . '/Storage.php';
-require_once __DIR__ . '/Plant.php';
-require_once __DIR__ . '/Seed.php';
-require_once __DIR__ . '/Shop.php';
-
 /**
- * Game - Contrôleur principal du jeu.
- * Gère les actions du joueur et coordonne les autres classes.
+ * Game — Contrôleur principal : plantation, récolte, état du jeu.
  */
 class Game
 {
-    /**
-     * Initialise le joueur si c'est sa première visite.
-     */
-    public static function init(): void
+    private Storage $storage;
+    private array $config;
+
+    public function __construct(Storage $storage)
     {
-        $player = Storage::read('player.json');
-        if (($player['created_at'] ?? 0) === 0) {
-            $config = Storage::read('config.json');
-            $player['gold'] = $config['starting_gold'];
+        $this->storage = $storage;
+        $this->config = $storage->read('config.json');
+
+        // Initialiser created_at si premier lancement
+        $player = $this->storage->read('player.json');
+        if ($player['created_at'] === 0) {
             $player['created_at'] = time();
-            Storage::write('player.json', $player);
+            $this->storage->write('player.json', $player);
         }
     }
 
-    /**
-     * Plante une graine depuis l'inventaire dans le jardin.
-     */
-    public static function plantSeed(string $seedId): Plant
+    public function getConfig(): array
     {
-        $config = Storage::read('config.json');
-        $plants = Storage::read('plants.json');
-        $inventory = Storage::read('inventory.json');
+        return $this->config;
+    }
 
-        // Vérifier le nombre de slots
-        $garden = $plants['garden'] ?? [];
-        if (count($garden) >= $config['garden_max_slots']) {
-            throw new RuntimeException("Jardin plein ! ({$config['garden_max_slots']} emplacements max)");
+    public function getStorage(): Storage
+    {
+        return $this->storage;
+    }
+
+    // --- Jardin ---
+
+    /**
+     * Retourne toutes les plantes du jardin avec leur état actuel.
+     */
+    public function getGarden(): array
+    {
+        $plantsData = $this->storage->read('plants.json');
+        $plants = [];
+
+        foreach ($plantsData as $pd) {
+            $plant = new Plant($pd, $this->config);
+            $plants[] = [
+                'plant' => $plant,
+                'data' => $pd,
+                'percent' => $plant->getGrowthPercent(),
+                'ready' => $plant->isReady(),
+                'remaining' => $plant->getTimeRemainingFormatted(),
+                'visual' => $plant->getVisualAttributes(),
+            ];
+        }
+
+        return $plants;
+    }
+
+    /**
+     * Retourne les emplacements libres du jardin.
+     */
+    public function getFreeSlots(): array
+    {
+        $maxSlots = $this->config['garden']['max_slots'];
+        $plantsData = $this->storage->read('plants.json');
+
+        $usedSlots = array_column($plantsData, 'slot');
+        $freeSlots = [];
+
+        for ($i = 0; $i < $maxSlots; $i++) {
+            if (!in_array($i, $usedSlots, true)) {
+                $freeSlots[] = $i;
+            }
+        }
+
+        return $freeSlots;
+    }
+
+    // --- Plantation ---
+
+    /**
+     * Plante une graine de l'inventaire dans un emplacement du jardin.
+     */
+    public function plantSeed(string $seedId, int $slot): Plant
+    {
+        // Valider l'emplacement
+        $maxSlots = $this->config['garden']['max_slots'];
+        if ($slot < 0 || $slot >= $maxSlots) {
+            throw new InvalidArgumentException("Emplacement invalide : {$slot}");
+        }
+
+        // Vérifier que l'emplacement est libre
+        $freeSlots = $this->getFreeSlots();
+        if (!in_array($slot, $freeSlots, true)) {
+            throw new RuntimeException("L'emplacement {$slot} est déjà occupé.");
         }
 
         // Trouver la graine dans l'inventaire
+        $inventory = $this->storage->read('inventory.json');
         $seedIndex = null;
         $seedData = null;
-        $seeds = $inventory['seeds'] ?? [];
-        foreach ($seeds as $index => $s) {
+
+        foreach ($inventory['seeds'] as $i => $s) {
             if ($s['id'] === $seedId) {
-                $seedIndex = $index;
+                $seedIndex = $i;
                 $seedData = $s;
                 break;
             }
         }
 
         if ($seedData === null) {
-            throw new InvalidArgumentException("Graine introuvable: {$seedId}");
+            throw new RuntimeException("Graine introuvable : {$seedId}");
         }
 
-        // Générer la plante
-        $plant = Plant::generate($seedData['rarity'], $seedData['plant_seed']);
-        $plant->planted_at = time();
+        // Créer la plante
+        $plant = Plant::createFromSeed($seedData, $slot, $this->config);
 
         // Retirer la graine de l'inventaire
         array_splice($inventory['seeds'], $seedIndex, 1);
-        Storage::write('inventory.json', $inventory);
+        $this->storage->write('inventory.json', $inventory);
 
-        // Ajouter au jardin
-        $plants['garden'] = $garden;
-        $plants['garden'][] = $plant->toArray();
-        Storage::write('plants.json', $plants);
+        // Ajouter la plante au jardin
+        $this->storage->update('plants.json', function (array $plants) use ($plant) {
+            $plants[] = $plant->toArray();
+            return $plants;
+        });
+
+        // Stats joueur
+        $this->storage->update('player.json', function (array $player) {
+            $player['total_planted']++;
+            return $player;
+        });
 
         return $plant;
     }
 
-    /**
-     * Récolte une plante prête.
-     * @return array ['petals' => int, 'rarity' => string, 'name' => string]
-     */
-    public static function harvest(string $plantId): array
-    {
-        $plants = Storage::read('plants.json');
-        $player = Storage::read('player.json');
+    // --- Récolte ---
 
+    /**
+     * Récolte une plante mature.
+     */
+    public function harvest(string $plantId): array
+    {
+        $plantsData = $this->storage->read('plants.json');
         $plantIndex = null;
         $plantData = null;
-        $garden = $plants['garden'] ?? [];
-        foreach ($garden as $index => $p) {
-            if ($p['id'] === $plantId) {
-                $plantIndex = $index;
-                $plantData = $p;
+
+        foreach ($plantsData as $i => $pd) {
+            if ($pd['id'] === $plantId) {
+                $plantIndex = $i;
+                $plantData = $pd;
                 break;
             }
         }
 
         if ($plantData === null) {
-            throw new InvalidArgumentException("Plante introuvable: {$plantId}");
+            throw new RuntimeException("Plante introuvable : {$plantId}");
         }
 
-        $plant = Plant::fromArray($plantData);
+        $plant = new Plant($plantData, $this->config);
 
-        // Vérification serveur : la plante doit avoir fini de pousser
-        if (!$plant->isGrown()) {
-            $remaining = $plant->getFormattedRemainingTime();
-            throw new RuntimeException("Plante pas encore prête ! Temps restant: {$remaining}");
+        // Vérification serveur : la plante est-elle prête ?
+        if (!$plant->isReady()) {
+            $remaining = $plant->getTimeRemainingFormatted();
+            throw new RuntimeException("Cette plante n'est pas encore prête. Temps restant : {$remaining}");
         }
 
-        $petals = $plant->petal_yield;
-
-        // Ajouter les pétales au joueur
-        $player['petals'][$plant->rarity] = ($player['petals'][$plant->rarity] ?? 0) + $petals;
-        $player['stats']['total_petals_harvested'] += $petals;
-        $player['stats']['total_plants_grown']++;
-
-        // Mise à jour de la plante la plus rare
-        $rarityOrder = ['E', 'D', 'C', 'B', 'A', 'S'];
-        $currentBest = array_search($player['stats']['rarest_plant'], $rarityOrder);
-        $harvestedRarity = array_search($plant->rarity, $rarityOrder);
-        if ($harvestedRarity > $currentBest) {
-            $player['stats']['rarest_plant'] = $plant->rarity;
-        }
-
-        Storage::write('player.json', $player);
+        // Calculer la récolte
+        $petalYield = $plant->calculatePetalYield();
+        $visual = $plant->getVisualAttributes();
 
         // Retirer la plante du jardin
-        array_splice($garden, $plantIndex, 1);
-        $plants['garden'] = $garden;
-        Storage::write('plants.json', $plants);
+        array_splice($plantsData, $plantIndex, 1);
+        $this->storage->write('plants.json', $plantsData);
+
+        // Ajouter au joueur
+        $this->storage->update('player.json', function (array $player) use ($petalYield) {
+            $player['petals'] += $petalYield;
+            $player['total_harvested']++;
+            return $player;
+        });
+
+        // Archiver la plante dans l'inventaire
+        $this->storage->update('inventory.json', function (array $inv) use ($plantData, $petalYield, $visual) {
+            $inv['harvested_plants'][] = [
+                'plant' => $plantData,
+                'visual' => $visual,
+                'petals_earned' => $petalYield,
+                'harvested_at' => time(),
+            ];
+            return $inv;
+        });
 
         return [
-            'petals' => $petals,
-            'rarity' => $plant->rarity,
-            'name' => $plant->name,
+            'plant' => $plant,
+            'petals' => $petalYield,
+            'visual' => $visual,
         ];
     }
 
-    /**
-     * Retourne l'état actuel du jardin avec les calculs de croissance.
-     */
-    public static function getGardenState(): array
-    {
-        $plants = Storage::read('plants.json');
-        $result = [];
+    // --- Statistiques ---
 
-        foreach ($plants['garden'] ?? [] as $plantData) {
-            $plant = Plant::fromArray($plantData);
-            $result[] = [
-                'plant' => $plant,
-                'growth_percent' => $plant->getGrowthPercent(),
-                'remaining_time' => $plant->getFormattedRemainingTime(),
-                'is_grown' => $plant->isGrown(),
-            ];
+    /**
+     * Retourne les stats complètes du joueur.
+     */
+    public function getStats(): array
+    {
+        $player = $this->storage->read('player.json');
+        $inventory = $this->storage->read('inventory.json');
+        $plants = $this->storage->read('plants.json');
+
+        $seedsByRarity = [];
+        foreach ($inventory['seeds'] as $s) {
+            $r = $s['rarity'];
+            $seedsByRarity[$r] = ($seedsByRarity[$r] ?? 0) + 1;
         }
 
-        return $result;
-    }
-
-    /**
-     * Retourne les graines de l'inventaire.
-     */
-    public static function getInventory(): array
-    {
-        $inventory = Storage::read('inventory.json');
-        $seeds = [];
-        foreach ($inventory['seeds'] ?? [] as $seedData) {
-            $seeds[] = Seed::fromArray($seedData);
+        $harvestedByRarity = [];
+        foreach ($inventory['harvested_plants'] as $h) {
+            $r = $h['plant']['rarity'];
+            $harvestedByRarity[$r] = ($harvestedByRarity[$r] ?? 0) + 1;
         }
-        return $seeds;
-    }
 
-    /**
-     * Retourne les données du joueur.
-     */
-    public static function getPlayer(): array
-    {
-        return Storage::read('player.json');
-    }
-
-    /**
-     * Réinitialise complètement le jeu.
-     */
-    public static function resetGame(): void
-    {
-        $config = Storage::read('config.json');
-        Storage::write('player.json', [
-            'name' => 'Jardinier',
-            'gold' => $config['starting_gold'],
-            'petals' => ['E' => 0, 'D' => 0, 'C' => 0, 'B' => 0, 'A' => 0, 'S' => 0],
-            'stats' => [
-                'total_plants_grown' => 0,
-                'total_petals_harvested' => 0,
-                'total_gold_earned' => 0,
-                'total_gold_spent' => 0,
-                'total_packs_bought' => 0,
-                'rarest_plant' => 'E',
-            ],
-            'created_at' => time(),
-        ]);
-        Storage::write('plants.json', ['garden' => []]);
-        Storage::write('inventory.json', ['seeds' => []]);
+        return [
+            'player' => $player,
+            'seeds_count' => count($inventory['seeds']),
+            'seeds_by_rarity' => $seedsByRarity,
+            'plants_growing' => count($plants),
+            'total_harvested_plants' => count($inventory['harvested_plants']),
+            'harvested_by_rarity' => $harvestedByRarity,
+            'play_time' => $player['created_at'] > 0 ? time() - $player['created_at'] : 0,
+        ];
     }
 }

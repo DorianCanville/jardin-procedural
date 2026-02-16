@@ -1,89 +1,93 @@
 <?php
 /**
- * RNG - Générateur de nombres pseudo-aléatoires à seed stable
- * Permet la reproduction exacte d'une séquence pour une seed donnée.
+ * RNG — Générateur pseudo-aléatoire déterministe basé sur une seed.
+ * Utilise un LCG (Linear Congruential Generator) pour la reproductibilité.
  */
 class RNG
 {
-    private int $seed;
-    private int $current;
+    private int $state;
+    private int $initialSeed;
+
+    // Constantes LCG (valeurs de Numerical Recipes)
+    private const A = 1664525;
+    private const C = 1013904223;
+    private const M = 0xFFFFFFFF; // 2^32
 
     public function __construct(int $seed)
     {
-        $this->seed = $seed;
-        $this->current = $seed;
+        $this->initialSeed = $seed;
+        $this->state = $seed & self::M;
     }
 
     public function getSeed(): int
     {
-        return $this->seed;
+        return $this->initialSeed;
     }
 
     /**
-     * Génère le prochain nombre pseudo-aléatoire (algorithme LCG).
-     * Retourne un entier entre 0 et 2^31-1.
+     * Génère le prochain entier pseudo-aléatoire [0, M].
      */
-    public function next(): int
+    public function nextInt(): int
     {
-        // Linear Congruential Generator (paramètres de Numerical Recipes)
-        $this->current = ($this->current * 1103515245 + 12345) & 0x7FFFFFFF;
-        return $this->current;
+        $this->state = (self::A * $this->state + self::C) & self::M;
+        return $this->state;
     }
 
     /**
-     * Retourne un flottant entre 0.0 et 1.0 (exclus).
+     * Génère un float dans [0, 1).
      */
     public function nextFloat(): float
     {
-        return $this->next() / 0x80000000;
+        return $this->nextInt() / (self::M + 1);
     }
 
     /**
-     * Retourne un entier dans l'intervalle [min, max].
+     * Génère un entier dans [min, max] inclus.
      */
-    public function nextInt(int $min, int $max): int
+    public function nextRange(int $min, int $max): int
     {
-        return $min + ($this->next() % ($max - $min + 1));
+        return $min + (int)($this->nextFloat() * ($max - $min + 1));
     }
 
     /**
-     * Choisit un élément dans un tableau.
-     */
-    public function choose(array $items): mixed
-    {
-        if (empty($items)) {
-            return null;
-        }
-        $index = $this->next() % count($items);
-        return array_values($items)[$index];
-    }
-
-    /**
-     * Sélection pondérée : choisit une clé parmi des poids.
-     * @param array $weights ['E' => 40, 'D' => 25, ...]
+     * Sélection pondérée : choisit un élément selon des poids.
+     * @param array $weights ['clé' => poids, ...]
+     * @return string La clé sélectionnée
      */
     public function weightedChoice(array $weights): string
     {
         $total = array_sum($weights);
         $roll = $this->nextFloat() * $total;
-        $cumulative = 0.0;
 
+        $cumulative = 0.0;
         foreach ($weights as $key => $weight) {
             $cumulative += $weight;
             if ($roll < $cumulative) {
-                return (string) $key;
+                return (string)$key;
             }
         }
 
-        // Fallback (ne devrait jamais arriver)
-        return (string) array_key_last($weights);
+        // Fallback : retourne la dernière clé
+        return (string)array_key_last($weights);
     }
 
     /**
-     * Génère une seed aléatoire unique.
+     * Choisit un élément aléatoire dans un tableau indexé.
+     */
+    public function choice(array $items): mixed
+    {
+        if (empty($items)) {
+            throw new InvalidArgumentException("Tableau vide pour choice()");
+        }
+        $items = array_values($items);
+        return $items[$this->nextRange(0, count($items) - 1)];
+    }
+
+    /**
+     * Génère une seed aléatoire non déterministe (pour créer de nouvelles plantes).
      */
     public static function generateSeed(): int
     {
-        return mt_rand(1, 0x7FFFFFFF);
+        return random_int(0, PHP_INT_MAX);
     }
 }

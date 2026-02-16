@@ -1,38 +1,41 @@
 <?php
 /**
- * Action : Vendre des pétales.
+ * Action : Vendre des pétales contre des pièces.
+ * Méthode : POST
+ * Paramètres : amount (int)
  */
-require_once __DIR__ . '/../classes/Shop.php';
 
-function handleSell(): array
-{
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        return ['message' => 'Méthode non autorisée.', 'type' => 'error'];
-    }
-
-    $rarity = $_POST['rarity'] ?? '';
-    $quantity = filter_input(INPUT_POST, 'quantity', FILTER_VALIDATE_INT);
-
-    // Validation de la rareté
-    if (!in_array($rarity, ['E', 'D', 'C', 'B', 'A', 'S'], true)) {
-        return ['message' => 'Rareté invalide.', 'type' => 'error'];
-    }
-
-    if ($quantity === false || $quantity === null || $quantity <= 0) {
-        return ['message' => 'Quantité invalide.', 'type' => 'error'];
-    }
-
-    if ($quantity > 999999) {
-        return ['message' => 'Quantité trop élevée.', 'type' => 'error'];
-    }
-
-    try {
-        $gold = Shop::sellPetals($rarity, $quantity);
-        return [
-            'message' => "💰 {$quantity} pétales {$rarity} vendus pour {$gold} pièces !",
-            'type' => 'success',
-        ];
-    } catch (Exception $e) {
-        return ['message' => $e->getMessage(), 'type' => 'error'];
-    }
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    header('Location: ?page=shop');
+    exit;
 }
+
+$amount = filter_input(INPUT_POST, 'amount', FILTER_VALIDATE_INT);
+
+// Validation
+if ($amount === false || $amount === null || $amount < 1) {
+    $_SESSION['flash'] = ['type' => 'error', 'message' => 'Quantite invalide.'];
+    header('Location: ?page=shop');
+    exit;
+}
+
+if ($amount > 1000000) {
+    $_SESSION['flash'] = ['type' => 'error', 'message' => 'Quantite trop elevee.'];
+    header('Location: ?page=shop');
+    exit;
+}
+
+try {
+    $shop = new Shop($game->getStorage(), $game->getConfig());
+    $result = $shop->sellPetals($amount);
+
+    $_SESSION['flash'] = [
+        'type' => 'success',
+        'message' => "{$amount} petales vendus pour {$result['gold_earned']} pieces !",
+    ];
+} catch (Exception $e) {
+    $_SESSION['flash'] = ['type' => 'error', 'message' => $e->getMessage()];
+}
+
+header('Location: ?page=shop');
+exit;

@@ -1,234 +1,257 @@
 <?php
-require_once __DIR__ . '/RNG.php';
-require_once __DIR__ . '/Storage.php';
-
 /**
- * Plant - Représente une plante avec ses attributs procéduraux.
+ * Plant — Représente une plante avec génération procédurale d'attributs visuels.
  */
 class Plant
 {
-    public string $id;
-    public string $rarity;
-    public string $name;
-    public int $seed;
-    public int $planted_at;
-    public int $growth_duration;
-    public bool $ready;
-    public int $petal_yield;
+    private array $data;
+    private array $config;
 
-    // Attributs procéduraux visuels
-    public int $petal_count;
-    public string $petal_shape;
-    public float $size;
-    public int $leaf_count;
-    public string $primary_color;
-    public string $secondary_color;
-    public string $pattern;
-    public int $complexity;
-    public ?string $aura;
+    public function __construct(array $data, array $config)
+    {
+        $this->data = $data;
+        $this->config = $config;
+    }
+
+    // --- Accesseurs ---
+
+    public function getId(): string
+    {
+        return $this->data['id'];
+    }
+
+    public function getRarity(): string
+    {
+        return $this->data['rarity'];
+    }
+
+    public function getSeed(): int
+    {
+        return $this->data['seed'];
+    }
+
+    public function getPlantedAt(): int
+    {
+        return $this->data['planted_at'];
+    }
+
+    public function getGrowthDuration(): int
+    {
+        return $this->data['growth_duration'];
+    }
+
+    public function getSlot(): int
+    {
+        return $this->data['slot'];
+    }
+
+    public function isHarvested(): bool
+    {
+        return $this->data['harvested'] ?? false;
+    }
+
+    public function toArray(): array
+    {
+        return $this->data;
+    }
+
+    // --- Logique croissance ---
 
     /**
-     * Crée une plante à partir d'une seed et d'un rang de rareté.
+     * Calcule le pourcentage de croissance actuel (0 à 100).
      */
-    public static function generate(string $rarity, int $plantSeed): self
+    public function getGrowthPercent(?int $now = null): float
     {
-        $config = Storage::read('config.json');
-        $rarityConfig = $config['rarities'][$rarity];
-        $rng = new RNG($plantSeed);
+        $now = $now ?? time();
+        $elapsed = $now - $this->data['planted_at'];
 
-        $plant = new self();
-        $plant->id = self::generateId();
-        $plant->rarity = $rarity;
-        $plant->seed = $plantSeed;
-        $plant->planted_at = 0; // Sera défini à la plantation
-        $plant->ready = false;
+        if ($elapsed <= 0) return 0.0;
+        if ($elapsed >= $this->data['growth_duration']) return 100.0;
 
-        // Durée de croissance avec variation
-        $variation = $config['growth_time_variation'];
-        $multiplier = $variation[0] + $rng->nextFloat() * ($variation[1] - $variation[0]);
-        $plant->growth_duration = (int) round($rarityConfig['growth_time_seconds'] * $multiplier);
-
-        // Production de pétales avec variation ±20%
-        $yieldVar = $config['petal_yield_variation'];
-        $yieldMult = (1.0 - $yieldVar) + $rng->nextFloat() * ($yieldVar * 2);
-        $plant->petal_yield = max(1, (int) round($rarityConfig['petal_yield'] * $yieldMult));
-
-        // Génération procédurale des attributs visuels
-        $plant->generateVisualAttributes($rng, $config, $rarity);
-
-        // Nom procédural
-        $plant->name = self::generateName($rng, $rarity);
-
-        return $plant;
+        return round(($elapsed / $this->data['growth_duration']) * 100, 1);
     }
 
     /**
-     * Génère les attributs visuels procéduraux basés sur la seed.
+     * Vérifie si la plante est prête à être récoltée.
      */
-    private function generateVisualAttributes(RNG $rng, array $config, string $rarity): void
+    public function isReady(?int $now = null): bool
     {
-        $rarityIndex = array_search($rarity, array_keys($config['rarities']));
+        return $this->getGrowthPercent($now) >= 100.0;
+    }
 
-        // Plus la rareté est haute, plus les attributs sont complexes
-        $this->petal_count = $rng->nextInt(3 + $rarityIndex, 6 + $rarityIndex * 3);
-        $this->petal_shape = $rng->choose($config['petal_shapes']);
-        $this->size = round(0.5 + $rng->nextFloat() * (0.5 + $rarityIndex * 0.3), 2);
-        $this->leaf_count = $rng->nextInt(1 + $rarityIndex, 3 + $rarityIndex * 2);
-        $this->primary_color = $rng->choose($config['primary_colors']);
-        $this->secondary_color = $rng->choose($config['secondary_colors']);
-        $this->pattern = $rng->choose($config['patterns']);
-        $this->complexity = min(10, $rng->nextInt(1 + $rarityIndex, 3 + $rarityIndex * 2));
+    /**
+     * Temps restant en secondes avant maturité.
+     */
+    public function getTimeRemaining(?int $now = null): int
+    {
+        $now = $now ?? time();
+        $remaining = ($this->data['planted_at'] + $this->data['growth_duration']) - $now;
+        return max(0, $remaining);
+    }
 
-        // Aura uniquement pour les rangs A et S
-        $this->aura = null;
-        if (in_array($rarity, ['A', 'S'])) {
-            $this->aura = $rng->choose($config['aura_colors']);
+    /**
+     * Formate le temps restant en texte lisible.
+     */
+    public function getTimeRemainingFormatted(?int $now = null): string
+    {
+        $seconds = $this->getTimeRemaining($now);
+
+        if ($seconds <= 0) return 'Prête !';
+
+        $hours = intdiv($seconds, 3600);
+        $minutes = intdiv($seconds % 3600, 60);
+        $secs = $seconds % 60;
+
+        $parts = [];
+        if ($hours > 0) $parts[] = "{$hours}h";
+        if ($minutes > 0) $parts[] = "{$minutes}m";
+        if ($secs > 0 && $hours === 0) $parts[] = "{$secs}s";
+
+        return implode(' ', $parts);
+    }
+
+    // --- Récolte ---
+
+    /**
+     * Calcule le nombre de pétales produits à la récolte.
+     */
+    public function calculatePetalYield(): int
+    {
+        $rarityConfig = $this->config['rarity'][$this->data['rarity']];
+        $baseYield = $rarityConfig['petal_yield'];
+
+        // Variation ±20% déterministe basée sur la seed
+        $rng = new RNG($this->data['seed'] + 9999);
+        $variation = $rng->nextFloat() * 0.4 + 0.8; // 0.8 à 1.2
+
+        return max(1, (int)round($baseYield * $variation));
+    }
+
+    /**
+     * Valeur en pièces des pétales de cette plante.
+     */
+    public function getPetalValue(): int
+    {
+        return $this->config['rarity'][$this->data['rarity']]['petal_value'];
+    }
+
+    // --- Génération procédurale visuelle ---
+
+    /**
+     * Génère tous les attributs visuels de la plante à partir de sa seed.
+     */
+    public function getVisualAttributes(): array
+    {
+        $rng = new RNG($this->data['seed']);
+        $rarity = $this->data['rarity'];
+        $rarityIndex = array_search($rarity, array_keys($this->config['rarity']));
+        $visual = $this->config['visual_attributes'];
+
+        // Nombre de pétales : augmente avec la rareté
+        $minPetals = 3 + $rarityIndex;
+        $maxPetals = 5 + $rarityIndex * 3;
+        $petalCount = $rng->nextRange($minPetals, $maxPetals);
+
+        // Forme des pétales
+        $petalShape = $rng->choice($visual['petal_shapes']);
+
+        // Taille (1-5, tend vers plus grand avec rareté)
+        $minSize = max(1, $rarityIndex);
+        $size = $rng->nextRange($minSize, min(5, $minSize + 3));
+
+        // Nombre de feuilles
+        $leafCount = $rng->nextRange(1, 3 + $rarityIndex);
+
+        // Couleurs
+        $primaryColor = $rng->choice($visual['colors']);
+        $secondaryColor = $rng->choice($visual['colors']);
+
+        // Motif : les rangs élevés débloquent plus de motifs
+        $availablePatterns = array_slice($visual['patterns'], 0, min(count($visual['patterns']), 2 + $rarityIndex));
+        $pattern = $rng->choice($availablePatterns);
+
+        // Complexité (1-10)
+        $complexity = $rng->nextRange(1 + $rarityIndex, min(10, 3 + $rarityIndex * 2));
+
+        // Aura : uniquement pour rang A et S
+        $aura = 'aucune';
+        if ($rarityIndex >= 4) {
+            $availableAuras = array_slice($visual['auras'], 1); // Exclure 'aucune'
+            $aura = $rng->choice($availableAuras);
         }
+
+        // Nom procédural
+        $name = $this->generateName($rng, $rarity);
+
+        return [
+            'name' => $name,
+            'petal_count' => $petalCount,
+            'petal_shape' => $petalShape,
+            'size' => $size,
+            'leaf_count' => $leafCount,
+            'primary_color' => $primaryColor,
+            'secondary_color' => $secondaryColor,
+            'pattern' => $pattern,
+            'complexity' => $complexity,
+            'aura' => $aura,
+        ];
     }
 
     /**
      * Génère un nom procédural pour la plante.
      */
-    private static function generateName(RNG $rng, string $rarity): string
+    private function generateName(RNG $rng, string $rarity): string
     {
         $prefixes = [
             'E' => ['Herbe', 'Pousse', 'Brin', 'Mousse'],
-            'D' => ['Fleur', 'Bouton', 'Tige', 'Bourgeon'],
-            'C' => ['Rose', 'Liane', 'Orchidée', 'Jasmin'],
-            'B' => ['Lotus', 'Dahlia', 'Iris', 'Pivoine'],
-            'A' => ['Amarante', 'Chrysanthème', 'Azalée', 'Camélia'],
-            'S' => ['Éternelle', 'Céleste', 'Mystique', 'Divine'],
+            'D' => ['Fleur', 'Bourgeon', 'Clochette', 'Primevère'],
+            'C' => ['Orchidée', 'Dahlia', 'Lys', 'Iris'],
+            'B' => ['Gardénia', 'Camélia', 'Magnolia', 'Amarante'],
+            'A' => ['Lotus', 'Astrale', 'Nébuleuse', 'Célestine'],
+            'S' => ['Éternelle', 'Mythique', 'Divine', 'Primordiale'],
         ];
 
         $suffixes = [
-            'E' => ['sauvage', 'des prés', 'simple', 'modeste'],
-            'D' => ['des bois', 'printanière', 'délicate', 'timide'],
-            'C' => ['enchantée', 'secrète', 'mystérieuse', 'rare'],
-            'B' => ['précieuse', 'ancienne', 'noble', 'protégée'],
-            'A' => ['légendaire', 'ancestrale', 'éternelle', 'sacrée'],
-            'S' => ['des dieux', 'primordiale', 'suprême', 'absolue'],
+            'des vents', 'de lune', 'sauvage', 'du crépuscule',
+            'de cristal', 'ardente', 'givrée', 'enchantée',
+            'du soleil', 'des abysses', 'stellaire', 'opalescente',
         ];
 
-        $prefix = $rng->choose($prefixes[$rarity] ?? $prefixes['E']);
-        $suffix = $rng->choose($suffixes[$rarity] ?? $suffixes['E']);
+        $prefix = $rng->choice($prefixes[$rarity] ?? $prefixes['E']);
+        $suffix = $rng->choice($suffixes);
 
         return "{$prefix} {$suffix}";
     }
 
-    /**
-     * Vérifie si la plante a fini de pousser.
-     */
-    public function isGrown(): bool
-    {
-        if ($this->planted_at === 0) {
-            return false;
-        }
-        return time() >= ($this->planted_at + $this->growth_duration);
-    }
+    // --- Factory ---
 
     /**
-     * Retourne le pourcentage de croissance (0-100).
+     * Crée une nouvelle plante à partir d'une graine.
      */
-    public function getGrowthPercent(): float
+    public static function createFromSeed(array $seedData, int $slot, array $config): self
     {
-        if ($this->planted_at === 0) {
-            return 0.0;
-        }
-        if ($this->isGrown()) {
-            return 100.0;
-        }
-        $elapsed = time() - $this->planted_at;
-        return min(100.0, round(($elapsed / $this->growth_duration) * 100, 1));
-    }
+        $rng = new RNG($seedData['seed'] + 7777);
+        $rarityConfig = $config['rarity'][$seedData['rarity']];
 
-    /**
-     * Retourne le temps restant en secondes.
-     */
-    public function getRemainingTime(): int
-    {
-        if ($this->isGrown()) {
-            return 0;
-        }
-        return max(0, ($this->planted_at + $this->growth_duration) - time());
-    }
+        // Durée de croissance = base × random(0.85, 1.25)
+        $growthMultiplier = 0.85 + $rng->nextFloat() * 0.40;
+        $growthDuration = (int)round($rarityConfig['growth_base_seconds'] * $growthMultiplier);
 
-    /**
-     * Formate le temps restant pour l'affichage.
-     */
-    public function getFormattedRemainingTime(): string
-    {
-        $seconds = $this->getRemainingTime();
-        if ($seconds <= 0) {
-            return 'Prête !';
-        }
-
-        $hours = floor($seconds / 3600);
-        $minutes = floor(($seconds % 3600) / 60);
-        $secs = $seconds % 60;
-
-        if ($hours > 0) {
-            return sprintf('%dh %02dm %02ds', $hours, $minutes, $secs);
-        }
-        if ($minutes > 0) {
-            return sprintf('%dm %02ds', $minutes, $secs);
-        }
-        return sprintf('%ds', $secs);
-    }
-
-    /**
-     * Sérialise la plante en tableau pour stockage JSON.
-     */
-    public function toArray(): array
-    {
-        return [
-            'id' => $this->id,
-            'rarity' => $this->rarity,
-            'name' => $this->name,
-            'seed' => $this->seed,
-            'planted_at' => $this->planted_at,
-            'growth_duration' => $this->growth_duration,
-            'ready' => $this->ready,
-            'petal_yield' => $this->petal_yield,
-            'petal_count' => $this->petal_count,
-            'petal_shape' => $this->petal_shape,
-            'size' => $this->size,
-            'leaf_count' => $this->leaf_count,
-            'primary_color' => $this->primary_color,
-            'secondary_color' => $this->secondary_color,
-            'pattern' => $this->pattern,
-            'complexity' => $this->complexity,
-            'aura' => $this->aura,
+        $plantData = [
+            'id' => self::generateId(),
+            'seed' => $seedData['seed'],
+            'rarity' => $seedData['rarity'],
+            'slot' => $slot,
+            'planted_at' => time(),
+            'growth_duration' => $growthDuration,
+            'harvested' => false,
         ];
-    }
 
-    /**
-     * Reconstruit une plante depuis un tableau JSON.
-     */
-    public static function fromArray(array $data): self
-    {
-        $plant = new self();
-        $plant->id = $data['id'];
-        $plant->rarity = $data['rarity'];
-        $plant->name = $data['name'];
-        $plant->seed = $data['seed'];
-        $plant->planted_at = $data['planted_at'];
-        $plant->growth_duration = $data['growth_duration'];
-        $plant->ready = $data['ready'] ?? false;
-        $plant->petal_yield = $data['petal_yield'];
-        $plant->petal_count = $data['petal_count'];
-        $plant->petal_shape = $data['petal_shape'];
-        $plant->size = $data['size'];
-        $plant->leaf_count = $data['leaf_count'];
-        $plant->primary_color = $data['primary_color'];
-        $plant->secondary_color = $data['secondary_color'];
-        $plant->pattern = $data['pattern'];
-        $plant->complexity = $data['complexity'];
-        $plant->aura = $data['aura'] ?? null;
-        return $plant;
+        return new self($plantData, $config);
     }
 
     private static function generateId(): string
     {
-        return bin2hex(random_bytes(8));
+        return 'plant_' . bin2hex(random_bytes(8));
     }
 }

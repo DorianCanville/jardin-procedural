@@ -1,110 +1,119 @@
 <?php
 /**
- * Jardin Procédural - Point d'entrée principal
- * Router simple basé sur les paramètres GET.
+ * FloraGen — Jeu de culture de plantes procédurales
+ * Point d'entrée principal et routeur.
  */
 
-// Configuration erreurs
-error_reporting(E_ALL);
-ini_set('display_errors', 0);
+declare(strict_types=1);
+session_start();
 
-// Chargement des classes
-require_once __DIR__ . '/classes/Storage.php';
-require_once __DIR__ . '/classes/RNG.php';
-require_once __DIR__ . '/classes/Plant.php';
-require_once __DIR__ . '/classes/Seed.php';
-require_once __DIR__ . '/classes/Shop.php';
-require_once __DIR__ . '/classes/Game.php';
-require_once __DIR__ . '/classes/Renderer.php';
+// Autoload des classes
+spl_autoload_register(function (string $class): void {
+    $file = __DIR__ . '/classes/' . $class . '.php';
+    if (file_exists($file)) {
+        require_once $file;
+    }
+});
 
-// Chargement des actions
-require_once __DIR__ . '/actions/plant.php';
-require_once __DIR__ . '/actions/harvest.php';
-require_once __DIR__ . '/actions/buy_pack.php';
-require_once __DIR__ . '/actions/sell.php';
+// Initialisation
+$storage = new Storage(__DIR__ . '/data');
+$game = new Game($storage);
+$renderer = new Renderer($game->getConfig());
 
-// Initialiser le joueur si nécessaire
-Game::init();
-
-// Router
+// Routage
 $page = $_GET['page'] ?? 'garden';
-$action = $_GET['action'] ?? '';
+$action = $_GET['do'] ?? null;
 
-// Sécurité : seules les pages valides
-$validPages = ['garden', 'shop', 'inventory', 'stats'];
-if (!in_array($page, $validPages, true)) {
+// Traitement des actions POST
+if ($page === 'action' && $action !== null) {
+    $allowedActions = ['plant', 'harvest', 'buy_pack', 'sell'];
+
+    if (!in_array($action, $allowedActions, true)) {
+        $_SESSION['flash'] = ['type' => 'error', 'message' => 'Action inconnue.'];
+        header('Location: ?page=garden');
+        exit;
+    }
+
+    $actionFile = __DIR__ . '/actions/' . $action . '.php';
+    if (file_exists($actionFile)) {
+        require $actionFile;
+    }
+    exit;
+}
+
+// Récupérer les messages flash
+$flash = $_SESSION['flash'] ?? null;
+unset($_SESSION['flash']);
+
+// Rendu des pages
+$allowedPages = ['garden', 'shop', 'inventory', 'stats'];
+if (!in_array($page, $allowedPages, true)) {
     $page = 'garden';
 }
 
-try {
-    switch ($page) {
-        case 'garden':
-            $message = $_GET['msg'] ?? null;
-            $messageType = 'success';
+$content = '';
 
-            if ($action === 'harvest') {
-                $result = handleHarvest();
-                $message = $result['message'];
-                $messageType = $result['type'];
-            } elseif ($action === 'reset') {
-                Game::resetGame();
-                $message = '🔄 Jeu réinitialisé !';
-                $messageType = 'info';
-            }
+switch ($page) {
+    case 'garden':
+        $garden = $game->getGarden();
+        $freeSlots = $game->getFreeSlots();
+        $player = $storage->read('player.json');
+        $inventory = $storage->read('inventory.json');
 
-            $gardenState = Game::getGardenState();
-            echo Renderer::gardenPage($gardenState, $message, $messageType);
-            break;
+        if ($flash) {
+            $content .= $renderer->renderMessage($flash['message'], $flash['type'], 'garden');
+            $content .= '<hr style="border-color:#333;margin:1rem 0">';
+        }
 
-        case 'shop':
-            $message = null;
-            $messageType = 'success';
-            $revealedSeeds = null;
-            $probabilities = null;
+        $content .= $renderer->renderGarden($garden, $freeSlots, $player, $inventory['seeds']);
+        break;
 
-            if ($action === 'buy') {
-                $result = handleBuyPack();
-                $message = $result['message'];
-                $messageType = $result['type'];
-                $revealedSeeds = $result['seeds'] ?? null;
-                $probabilities = $result['probabilities'] ?? null;
-            } elseif ($action === 'sell') {
-                $result = handleSell();
-                $message = $result['message'];
-                $messageType = $result['type'];
-            }
+    case 'shop':
+        $player = $storage->read('player.json');
 
-            echo Renderer::shopPage($message, $messageType, $revealedSeeds, $probabilities);
-            break;
+        // Récupérer le résultat du dernier achat si présent
+        $lastPurchase = null;
+        if (isset($_SESSION['last_purchase'])) {
+            $purchaseData = $_SESSION['last_purchase'];
+            unset($_SESSION['last_purchase']);
 
-        case 'inventory':
-            $message = null;
-            $messageType = 'success';
+            // Reconstituer les objets Seed
+            $lastPurchase = [
+                'seeds' => array_map(fn(array $s) => new Seed($s), $purchaseData['seeds']),
+                'price' => $purchaseData['price'],
+            ];
+        }
 
-            if ($action === 'plant') {
-                $result = handlePlant();
-                $message = $result['message'];
-                $messageType = $result['type'];
-                // Rediriger vers le jardin après plantation réussie
-                if ($result['type'] === 'success') {
-                    header('Location: ?page=garden&msg=' . urlencode($result['message']));
-                    exit;
-                }
-            }
+        $error = ($flash && $flash['type'] === 'error') ? $flash['message'] : null;
+        $success = ($flash && $flash['type'] === 'success') ? $flash['message'] : null;
 
-            $seeds = Game::getInventory();
-            echo Renderer::inventoryPage($seeds, $message, $messageType);
-            break;
+        $content .= $renderer->renderShop($player, $lastPurchase, $error, $success);
+        break;
 
-        case 'stats':
-            echo Renderer::statsPage();
-            break;
-    }
+    case 'inventory':
+        $player = $storage->read('player.json');
+        $inventory = $storage->read('inventory.json');
 
-} catch(Throwable $e) {
-    // Page d'erreur gracieuse
-    echo Renderer::header('Erreur', '');
-    echo Renderer::flash('❌ Erreur: ' . $e->getMessage(), 'error');
-    echo '<p><a href="?page=garden" class="btn btn-primary">Retour au jardin</a></p>';
-    echo Renderer::footer();
+        if ($flash) {
+            $content .= $renderer->renderMessage($flash['message'], $flash['type'], 'inventory');
+            $content .= '<hr style="border-color:#333;margin:1rem 0">';
+        }
+
+        $content .= $renderer->renderInventory($inventory, $player);
+        break;
+
+    case 'stats':
+        $stats = $game->getStats();
+        $content .= $renderer->renderStats($stats);
+        break;
 }
+
+// Titres
+$titles = [
+    'garden' => 'Jardin',
+    'shop' => 'Boutique',
+    'inventory' => 'Inventaire',
+    'stats' => 'Statistiques',
+];
+
+echo $renderer->layout($titles[$page] ?? 'FloraGen', $content, $page);
